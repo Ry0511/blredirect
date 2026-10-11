@@ -1,25 +1,18 @@
 #ifndef BLREDIRECT_UNREAL_TYPES_H
 #define BLREDIRECT_UNREAL_TYPES_H
 
-#include <tuple>
-#include <cstddef>
 #include <cstdint>
 
 // TODO: I really do need to just create a generic BL1 types library that I can vendor in. That
 //  way I can manage both BL1 and BL1E in the same place.
 
-namespace blredirect::unreal {
-
-constexpr uint32_t EF_ForcedExport = 0x1;
-constexpr uint32_t PKG_Cooked = 0x8;
+namespace blredirect::ue3 {
 
 #pragma pack(push, 4)
 
 ////////////////////////////////////////////////////////////////////////////////
 // | Core / General |
 ////////////////////////////////////////////////////////////////////////////////
-
-struct ULinkerLoad;
 
 struct FName {
     int32_t Index;
@@ -44,9 +37,15 @@ struct TArray {
 
 using FString = TArray<wchar_t>;
 
+struct FMalloc {
+    void** VfTable;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // | UObject Framework |
 ////////////////////////////////////////////////////////////////////////////////
+
+struct ULinkerLoad;
 
 struct UObject {
     void* VfTableObject;
@@ -170,6 +169,6 @@ struct ULinkerLoad : ULinker {};
 
 #pragma pack(pop)
 
-}  // namespace blredirect::unreal
+}  // namespace blredirect::ue3
 
 #endif  // BLREDIRECT_UNREAL_TYPES_H
