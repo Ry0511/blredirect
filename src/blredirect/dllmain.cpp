@@ -1,0 +1,27 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
+
+#include <MinHook.h>
+
+// NOLINTNEXTLINE(readability-identifier-naming,misc-use-internal-linkage)
+BOOL APIENTRY DllMain(HMODULE hinst_dll, DWORD fdw_reason, LPVOID /*lpv_reserved*/) {
+    switch (fdw_reason) {
+        case DLL_PROCESS_ATTACH: {
+            DisableThreadLibraryCalls(hinst_dll);
+            MH_Initialize();
+            break;
+        }
+
+        case DLL_PROCESS_DETACH: {
+            MH_Uninitialize();
+            break;
+        }
+
+        default: {
+            break;
+        }
+    }
+    return TRUE;
+}
