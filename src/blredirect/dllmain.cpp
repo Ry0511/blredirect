@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <MinHook.h>
 
+#include "blredirect/hooks.h"
 #include "blredirect/logging.h"
 
 namespace {
@@ -32,6 +33,7 @@ BOOL APIENTRY DllMain(HMODULE hinst_dll, DWORD fdw_reason, LPVOID /*lpv_reserved
             DisableThreadLibraryCalls(hinst_dll);
             setup_logging(hinst_dll);
             MH_Initialize();
+            blredirect::install_hooks();
             break;
         }
 
