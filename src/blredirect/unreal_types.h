@@ -38,11 +38,30 @@ struct TArray {
 using FString = TArray<wchar_t>;
 
 struct FMalloc {
-    void** VfTable;
+    struct VfTable {
+        void* exec;
+        void* malloc;
+        void* realloc;
+        void(__thiscall* free)(FMalloc* self, void* original);
+    };
+
+    VfTable* vtable;
 };
 
 struct FPackageFileCache {
-    void** VfTable;
+    struct VfTable {
+        void* _1;
+        void* _2;
+        uint32_t(__thiscall* FindPackageFile)(
+            FPackageFileCache* self,
+            const wchar_t* name,
+            const FGuid* guid,
+            FString* out_filename,
+            const wchar_t* language
+        );
+    };
+
+    VfTable* vtable;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

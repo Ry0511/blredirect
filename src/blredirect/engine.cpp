@@ -30,16 +30,6 @@ using StaticLoadObjectFn = UObject*(__cdecl*)(UClass * cls,
                                               void* sandbox,
                                               uint32_t allow_object_reconciliation);
 
-using FreeFn = void(__thiscall*)(FMalloc* self, void* data);
-
-using FindPackageFileFn = uint32_t(__thiscall*)(
-    FPackageFileCache* self,
-    const wchar_t* name,
-    const FGuid* guid,
-    FString* out_filename,
-    const wchar_t* language
-);
-
 IndexToObjectFn fn_index_to_object = nullptr;
 GetExportPathNameFn fn_get_export_path_name = nullptr;
 StaticLoadObjectFn fn_static_load_object = nullptr;
@@ -181,7 +171,7 @@ bool init() {
 void free(void* ptr) {
     if (ptr != nullptr && gmalloc != nullptr && *gmalloc != nullptr) {
         FMalloc* malloc = *gmalloc;
-        reinterpret_cast<FreeFn>(malloc->VfTable[3])(malloc, ptr);
+        malloc->vtable->free(malloc, ptr);
     }
 }
 
@@ -228,8 +218,7 @@ std::wstring find_package_file(const wchar_t* package) {
     FPackageFileCache* cache = *gpackage_file_cache;
 
     FString filename{};
-    const auto find_package_file_fn = reinterpret_cast<FindPackageFileFn>(cache->VfTable[2]);
-    const auto found = find_package_file_fn(cache, package, nullptr, &filename, nullptr);
+    const auto found = cache->vtable->FindPackageFile(cache, package, nullptr, &filename, nullptr);
 
     std::wstring result = (found != 0 && filename.Data != nullptr)
                               ? filename.Data
@@ -268,7 +257,7 @@ std::optional<uint32_t> read_package_flags(const std::wstring& file) {
     stream.seekg(
         folder_name_length >= 0
             ? folder_name_length
-            : -folder_name_length * sizeof(wchar_t),
+            : -folder_name_length * static_cast<int32_t>(sizeof(wchar_t)),
         std::ios::cur
     );
 
