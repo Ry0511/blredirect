@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <string>
+#include <unordered_map>
 
 #include "blredirect/engine.h"
 #include "blredirect/hooks.h"
@@ -55,6 +56,48 @@ CreateExportFn fn_create_export = nullptr;
 IsDebuggerPresentFn fn_is_debugger_present = nullptr;
 std::atomic hooks_installed{false};
 
+// NOLINTNEXTLINE(*-throwing-static-initialization)
+std::unordered_map<uint64_t, bool> mod_packages;
+
+////////////////////////////////////////////////////////////////////////////////
+// | Package Filter |
+////////////////////////////////////////////////////////////////////////////////
+
+// HACK - since if we redirect every load we will hit the memory limit quite quickly and
+//  crash. So instead we only redirect an export if the package file itself is not cooked which
+//  means it has been modified (saved with the editor).
+bool is_mod_package(ULinkerLoad* linker, const FObjectExport& exp) {
+    int32_t top_index = exp.OuterIndex - 1;
+    const FObjectExport* top = linker->ExportMap.at(top_index);
+    while (top != nullptr && top->OuterIndex > 0) {
+        top_index = top->OuterIndex - 1;
+        top = linker->ExportMap.at(top_index);
+    }
+
+    if (top == nullptr || top->OuterIndex != 0) {
+        return false;
+    }
+
+    const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(top->ObjectName.Index)) << 32)
+                         | static_cast<uint32_t>(top->ObjectName.Number);
+
+    auto [it, inserted] = mod_packages.try_emplace(key, false);
+
+    if (inserted) {
+        constexpr uint32_t PKG_Cooked = 0x8;
+        const std::wstring package = ue3::get_export_path_name(linker, top_index, nullptr, true);
+        const std::wstring file = ue3::find_package_file(package.c_str());
+        const auto flags = file.empty() ? std::nullopt : ue3::read_package_flags(file);
+
+        it->second = flags.has_value() && (*flags & PKG_Cooked) == 0;
+        if (it->second) {
+            BLREDIRECT_LOG("{} is a mod package, redirecting to: {}", narrow(package), narrow(file));
+        }
+    }
+
+    return it->second;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // | Load/Find Export |
 ////////////////////////////////////////////////////////////////////////////////
@@ -101,15 +144,15 @@ UObject* __fastcall create_export_hook(ULinkerLoad* self, void* /*edx*/, int32_t
     // exports.
 
     // We only care about forced exports everything else is fine to fall through as normal. This
-    // also handles the function being called recursively problem. Generically, we force all forced
-    // exports to load from their stored package rather than from the cooked package; no state
-    // required.
+    // also handles the function being called recursively problem. Only forced exports of packages
+    // a mod replaced load from their stored package, everything else uses the cooked copy.
     if (
         exp == nullptr
         || exp->Object != nullptr
         || (exp->ExportFlags & EF_ForcedExport) == 0
         || exp->OuterIndex <= 0
         || exp->ClassIndex == 0
+        || !is_mod_package(self, *exp)
     ) {
         return fn_create_export(self, index);
     }

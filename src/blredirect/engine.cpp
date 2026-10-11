@@ -1,6 +1,7 @@
 #include <libhat.hpp>
 
 #include <cstring>
+#include <fstream>
 
 #include "blredirect/engine.h"
 #include "blredirect/logging.h"
@@ -31,11 +32,20 @@ using StaticLoadObjectFn = UObject*(__cdecl*)(UClass * cls,
 
 using FreeFn = void(__thiscall*)(FMalloc* self, void* data);
 
+using FindPackageFileFn = uint32_t(__thiscall*)(
+    FPackageFileCache* self,
+    const wchar_t* name,
+    const FGuid* guid,
+    FString* out_filename,
+    const wchar_t* language
+);
+
 IndexToObjectFn fn_index_to_object = nullptr;
 GetExportPathNameFn fn_get_export_path_name = nullptr;
 StaticLoadObjectFn fn_static_load_object = nullptr;
 
 FMalloc** gmalloc = nullptr;
+FPackageFileCache** gpackage_file_cache = nullptr;
 
 // UObject* ULinkerLoad::IndexToObject(PACKAGE_INDEX Index)
 constexpr auto INDEX_TO_OBJECT_SIG = hat::compile_signature<
@@ -100,6 +110,19 @@ constexpr auto STATIC_LOAD_OBJECT_SIG = hat::compile_signature<
     " 74"                 // je
     >();
 
+constexpr auto GPACKAGE_FILE_CACHE_SIG = hat::compile_signature<
+    " 8B 0D ?? ?? ?? ??"  // mov ecx, [GPackageFileCache]
+    " 8B 11"              // mov edx, [ecx]
+    " 6A 00"              // push 0 (Language)
+    " 8D 75 CC"           // lea esi, [ebp - 0x34] (OutFileName)
+    " 56"                 // push esi
+    " 8B 75 DC"           // mov esi, [ebp - 0x24] (Guid)
+    " 56"                 // push esi
+    " 50"                 // push eax (Name)
+    " 8B 42 08"           // mov eax, [edx + 8] (FindPackageFile)
+    " FF D0"              // call eax
+    >();
+
 constexpr auto GMALLOC_SIG = hat::compile_signature<
     " 89 0D ?? ?? ?? ??"  // mov [GMalloc], ecx
     " 8B 11"              // mov edx, [ecx]
@@ -146,11 +169,13 @@ bool init() {
     fn_get_export_path_name = find_function<GetExportPathNameFn>("ULinker::GetExportPathName", GET_EXPORT_PATH_NAME_SIG);
     fn_static_load_object = find_function<StaticLoadObjectFn>("UObject::StaticLoadObject", STATIC_LOAD_OBJECT_SIG);
     gmalloc = find_global<FMalloc*>("GMalloc", GMALLOC_SIG);
+    gpackage_file_cache = find_global<FPackageFileCache*>("GPackageFileCache", GPACKAGE_FILE_CACHE_SIG);
 
     return fn_index_to_object != nullptr
            && fn_get_export_path_name != nullptr
            && fn_static_load_object != nullptr
-           && gmalloc != nullptr;
+           && gmalloc != nullptr
+           && gpackage_file_cache != nullptr;
 }
 
 void free(void* ptr) {
@@ -197,6 +222,61 @@ UObject* get_outermost(UObject* obj) {
         obj = obj->Outer;
     }
     return obj;
+}
+
+std::wstring find_package_file(const wchar_t* package) {
+    FPackageFileCache* cache = *gpackage_file_cache;
+
+    FString filename{};
+    const auto find_package_file_fn = reinterpret_cast<FindPackageFileFn>(cache->VfTable[2]);
+    const auto found = find_package_file_fn(cache, package, nullptr, &filename, nullptr);
+
+    std::wstring result = (found != 0 && filename.Data != nullptr)
+                              ? filename.Data
+                              : L"";
+    free(filename.Data);
+    return result;
+}
+
+std::optional<uint32_t> read_package_flags(const std::wstring& file) {
+    // quickly probe a packages header and grab its flags, any uncooked packages are likely to have
+    // been modified. See: https://eliotvu.com/page/unreal-package-file-format
+    constexpr uint32_t PACKAGE_FILE_MAGIC = 0x9E2A83C1;
+
+    std::ifstream stream{file, std::ios::binary};
+    const auto read = [&stream](auto& out) {
+        stream.read(reinterpret_cast<char*>(&out), sizeof(out));
+        return stream.good();
+    };
+
+    uint32_t tag = 0;
+    uint32_t file_version = 0;
+    int32_t total_header_size = 0;
+    int32_t folder_name_length = 0;
+    uint32_t package_flags = 0;
+
+    if (
+        !read(tag)
+        || tag != PACKAGE_FILE_MAGIC
+        || !read(file_version)
+        || !read(total_header_size)
+        || !read(folder_name_length)
+    ) {
+        return std::nullopt;
+    }
+
+    stream.seekg(
+        folder_name_length >= 0
+            ? folder_name_length
+            : -folder_name_length * sizeof(wchar_t),
+        std::ios::cur
+    );
+
+    if (!read(package_flags)) {
+        return std::nullopt;
+    }
+
+    return package_flags;
 }
 
 }  // namespace blredirect::ue3

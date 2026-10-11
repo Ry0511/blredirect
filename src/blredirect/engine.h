@@ -2,6 +2,7 @@
 #define BLREDIRECT_ENGINE_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "blredirect/unreal_types.h"
@@ -36,6 +37,12 @@ UObject* static_load_object(
 );
 
 UObject* get_outermost(UObject* obj);
+
+// GPackageFileCache->FindPackageFile, empty if the package has no file
+std::wstring find_package_file(const wchar_t* package);
+
+// PackageFlags from a package file's summary
+std::optional<uint32_t> read_package_flags(const std::wstring& file);
 
 }  // namespace blredirect::ue3
 
