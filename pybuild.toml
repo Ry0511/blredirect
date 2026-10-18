@@ -1,0 +1,8 @@
+[sources]
+include = ["src/blredirect/**/*.cpp", "src/blredirect/**/*.h"]
+exclude = []
+
+[[package]]
+include = ["blredirect.dll", "blredirect.pdb"]
+exclude = []
+dest = "Binaries/Plugins"

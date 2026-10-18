@@ -68,6 +68,8 @@ struct FPackageFileCache {
 // | UObject Framework |
 ////////////////////////////////////////////////////////////////////////////////
 
+struct UClass;
+struct ULinker;
 struct ULinkerLoad;
 
 struct UObject {
@@ -82,7 +84,7 @@ struct UObject {
     int32_t NetIndex;
     UObject* Outer;
     FName Name;
-    struct UClass* Class;
+    UClass* Class;
     UObject* ObjectArchetype;
 };
 
@@ -91,9 +93,9 @@ struct UField : UObject {
     UField* Next;
 };
 
-struct UClass : UField {};
-
 struct UPackage : UObject {};
+struct UStruct : UField {};
+struct UClass : UStruct {};
 
 ////////////////////////////////////////////////////////////////////////////////
 // | Package Exports |
